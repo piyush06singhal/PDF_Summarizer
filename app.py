@@ -6,12 +6,13 @@ from langchain.text_splitter import CharacterTextSplitter
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain import FAISS
 from langchain.chains.question_answering import load_qa_chain
-from langchain.llms import OpenAI
 from langchain.chat_models import ChatOpenAI
 from langchain.callbacks import get_openai_callback
 
 def load_openai_api_key():
     dotenv_path = "openai.env"
+    if not os.path.exists(dotenv_path):
+        raise FileNotFoundError(f"File '{dotenv_path}' not found. Please ensure the file exists.")
     load_dotenv(dotenv_path)
     openai_api_key = os.getenv("OPENAI_API_KEY")
     if not openai_api_key:
@@ -35,42 +36,55 @@ def process_text(text):
     return knowledgeBase
 
 def main():
-    st.title("📄PDF Summarizer")
+    st.title("📄 PDF Summarizer")
     st.write("Created by Piyush Singhal")
     st.divider()
 
     try:
         os.environ["OPENAI_API_KEY"] = load_openai_api_key()
-    except ValueError as e:
-        st.error(str(e))
+        st.success("API Key loaded successfully!")
+    except Exception as e:
+        st.error(f"Error: {e}")
         return
 
     pdf = st.file_uploader('Upload your PDF Document', type='pdf')
 
     if pdf is not None:
-        pdf_reader = PdfReader(pdf)
-        # Text variable will store the pdf text
-        text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text()
+        try:
+            pdf_reader = PdfReader(pdf)
+            # Text variable will store the pdf text
+            text = ""
+            for page in pdf_reader.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text
 
-        # Create the knowledge base object
-        knowledgeBase = process_text(text)
+            if not text.strip():
+                st.error("Unable to extract text from the uploaded PDF. Please check the document.")
+                return
 
-        query = "Summarize the content of the uploaded PDF file in approximately 3-5 sentences. Focus on capturing the main ideas and key points discussed in the document. Use your own words and ensure clarity and coherence in the summary."
+            st.info("Processing the text and creating the knowledge base...")
+            knowledgeBase = process_text(text)
+            st.success("Knowledge base created successfully!")
 
-        if query:
-            docs = knowledgeBase.similarity_search(query)
-            OpenAIModel = "gpt-3.5-turbo-16k"
-            llm = ChatOpenAI(model=OpenAIModel, temperature=0.1)
-            chain = load_qa_chain(llm, chain_type='stuff')
+            query = "Summarize the content of the uploaded PDF file in approximately 3-5 sentences. Focus on capturing the main ideas and key points discussed in the document. Use your own words and ensure clarity and coherence in the summary."
 
-            with get_openai_callback() as cost:
-                response = chain.run(input_documents=docs, question=query)
-                print(cost)
+            if query:
+                docs = knowledgeBase.similarity_search(query)
+                OpenAIModel = "gpt-3.5-turbo-16k"
+                llm = ChatOpenAI(model=OpenAIModel, temperature=0.1)
+                chain = load_qa_chain(llm, chain_type='stuff')
 
-            st.subheader('Summary Results:')
-            st.write(response)
+                st.info("Generating summary...")
+                with get_openai_callback() as cost:
+                    response = chain.run(input_documents=docs, question=query)
+                    st.write(f"OpenAI API Cost: {cost}")
+
+                st.subheader('Summary Results:')
+                st.write(response)
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
+            return
 
 if __name__ == '__main__':
     main()
